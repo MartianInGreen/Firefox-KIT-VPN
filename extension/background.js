@@ -80,6 +80,7 @@ browser.proxy.onError.addListener((err) => {
 
 let port = null;
 let reconnectTimer = null;
+let enableInFlight = false;
 
 function connectNative() {
   try {
@@ -91,6 +92,7 @@ function connectNative() {
   port.onMessage.addListener(onNativeMessage);
   port.onDisconnect.addListener(() => {
     port = null;
+    enableInFlight = false;
     const why = browser.runtime.lastError ? browser.runtime.lastError.message : "disconnected";
     applyStatus({ state: "unavailable", detail: "companion unavailable: " + why });
     if (reconnectTimer) clearTimeout(reconnectTimer);
@@ -125,6 +127,22 @@ function applyStatus(msg) {
   };
   state.status = st;
   if (st.socks_port) state.socksPort = st.socks_port;
+
+  // Keep an enabled extension self-healing. The helper can stop after a
+  // crashed supervisor, a closed native-messaging session, or a stale
+  // shutdown; polling status alone used to leave the UI permanently at
+  // "stopped" until the user toggled the extension.
+  if (st.state === "starting" || st.state === "running" || st.state === "reconnecting") {
+    enableInFlight = false;
+  } else if (st.state === "stopped") {
+    requestEnable();
+  }
+}
+
+function requestEnable() {
+  if (!state.enabled || !port || enableInFlight) return;
+  enableInFlight = true;
+  sendNative({ type: "enable" });
 }
 
 function pollStatus() {
@@ -139,7 +157,13 @@ async function setEnabled(v) {
   state.enabled = !!v;
   await saveState();
   // idempotent on the companion side
-  sendNative({ type: v ? "enable" : "disable" });
+  if (v) {
+    enableInFlight = false;
+    requestEnable();
+  } else {
+    enableInFlight = false;
+    sendNative({ type: "disable" });
+  }
   pollStatus();
 }
 
@@ -199,6 +223,6 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   pollStatus();
   setInterval(pollStatus, POLL_INTERVAL_MS);
   if (state.enabled) {
-    sendNative({ type: "enable" });
+    requestEnable();
   }
 })();

@@ -33,13 +33,40 @@ pub fn enable() -> Result<String, String> {
     }
 
     // ---- already running? don't touch anything, just report state ----
+    // A supervisor counts as "running" only while its status is one of the
+    // healthy states. If it is alive but stuck (e.g. it never finished a
+    // previous shutdown), force-kill it so a fresh tunnel can come up.
     if let Ok(pid_str) = std::fs::read_to_string(config::PID_PATH) {
         if let Ok(pid) = pid_str.trim().parse::<i32>() {
             if nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_ok() {
-                let st = read_status().unwrap_or_else(|| {
-                    Status::new("starting", "tunnel already running", cfg.socks_port())
-                });
-                return Ok(st.json());
+                let st = read_status();
+                let healthy = st
+                    .as_ref()
+                    .map(|s| {
+                        matches!(
+                            s.state.as_str(),
+                            "running" | "starting" | "reconnecting"
+                        )
+                    })
+                    .unwrap_or(false);
+                if healthy {
+                    return Ok(st.unwrap().json());
+                }
+                log(&format!(
+                    "supervisor pid {} alive but not healthy — force-killing",
+                    pid
+                ));
+                let _ = nix::sys::signal::kill(
+                    nix::unistd::Pid::from_raw(pid),
+                    Some(nix::sys::signal::Signal::SIGKILL),
+                );
+                for _ in 0..50 {
+                    if nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_err() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                let _ = std::fs::remove_file(config::PID_PATH);
             }
         }
     }
@@ -56,7 +83,19 @@ pub fn enable() -> Result<String, String> {
         .open(config::LOCK_PATH)
         .map_err(|e| format!("cannot open lock file: {}", e))?;
     if unsafe { nix::libc::flock(lock.as_raw_fd(), nix::libc::LOCK_EX | nix::libc::LOCK_NB) } != 0 {
-        // another enable is in progress — report current state
+        // the lock is held: by a healthy tunnel (report it) or by a stuck
+        // supervisor (wait briefly for it to go away, then try again)
+        for _ in 0..30 {
+            let st = read_status();
+            let healthy = st
+                .as_ref()
+                .map(|s| matches!(s.state.as_str(), "running" | "starting" | "reconnecting"))
+                .unwrap_or(false);
+            if healthy {
+                return Ok(st.unwrap().json());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
         if let Some(st) = read_status() {
             return Ok(st.json());
         }

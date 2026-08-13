@@ -214,8 +214,10 @@ pub fn run(
     log("supervisor stopping");
     let final_status = Status::new("stopped", "stopped", socks_port);
     write_status(&final_status);
-    cleanup(openvpn, socks, &final_status);
+    // free the pidfile FIRST so a concurrent `enable` is not blocked by a
+    // supervisor that is still finishing its cleanup
     let _ = std::fs::remove_file(config::PID_PATH);
+    cleanup(openvpn, socks, &final_status);
 }
 
 fn wait_for_stop() {
@@ -345,8 +347,18 @@ fn stop_child(c: &mut Child) {
         }
         if Instant::now() >= deadline {
             let _ = c.kill();
-            let _ = c.wait();
-            return;
+            // bounded wait: never block the supervisor's teardown forever
+            let hard = Instant::now() + Duration::from_secs(5);
+            loop {
+                if let Ok(Some(_)) = c.try_wait() {
+                    return;
+                }
+                if Instant::now() >= hard {
+                    log(&format!("stop_child: giving up on pid {}", c.id()));
+                    return; // will be reparented to init and reaped there
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
         }
         std::thread::sleep(Duration::from_millis(100));
     }
