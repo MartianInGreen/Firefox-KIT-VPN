@@ -13,7 +13,6 @@
 const NATIVE_NAME = "kit_vpn_companion";
 const DEFAULT_DOMAINS = ["*.kit.edu"];
 const DEFAULT_SOCKS_PORT = 1080;
-const DIRECT = { type: "direct" };
 const POLL_INTERVAL_MS = 3000;
 
 const state = {
@@ -45,30 +44,57 @@ browser.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   if (changes.enabled) state.enabled = changes.enabled.newValue;
   if (changes.domains) state.domains = changes.domains.newValue || [];
+  if (changes.enabled || changes.domains) refreshProxyListener();
 });
 
 /* ------------------------------------------------------------------ */
 /* per-request proxy decision                                          */
 /* ------------------------------------------------------------------ */
 
-browser.proxy.onRequest.addListener(
-  (req) => {
-    if (!state.enabled) return DIRECT;
-    const host = kitHostname(req.url);
-    if (host && kitMatches(host, state.domains)) {
-      // SOCKS5 on the local companion; proxyDNS = true resolves hostnames
-      // inside the tunnel (no DNS leak for internal KIT names).
-      return {
-        type: "socks",
-        host: "127.0.0.1",
-        port: state.socksPort,
-        proxyDNS: true,
-      };
-    }
-    return DIRECT;
-  },
-  { urls: ["<all_urls>"] }
-);
+// Only claim requests for configured KIT domains.  Registering a handler for
+// <all_urls> and returning DIRECT for everything else steals/overrides proxy
+// decisions made by the user's normal proxy setup (FoxyProxy, Mullvad, etc.).
+// For non-KIT traffic we do not register a handler at all.
+let proxyListenerRegistered = false;
+
+function proxyFilters() {
+  const filters = [];
+  for (const pattern of state.domains) {
+    const base = kitNormalizeDomain(pattern);
+    if (!base) continue;
+    filters.push(`*://${base}/*`, `*://*.${base}/*`);
+  }
+  return [...new Set(filters)];
+}
+
+function handleProxyRequest(req) {
+  if (!state.enabled) return undefined;
+  const host = kitHostname(req.url);
+  if (!host || !kitMatches(host, state.domains)) return undefined;
+
+  console.debug("KIT VPN: proxying", host, "via", state.socksPort);
+  // SOCKS5 on the local companion; proxyDNS = true resolves hostnames
+  // inside the tunnel (no DNS leak for internal KIT names).
+  return {
+    type: "socks",
+    host: "127.0.0.1",
+    port: state.socksPort,
+    proxyDNS: true,
+  };
+}
+
+function refreshProxyListener() {
+  if (proxyListenerRegistered) {
+    browser.proxy.onRequest.removeListener(handleProxyRequest);
+    proxyListenerRegistered = false;
+  }
+  if (!state.enabled) return;
+  const urls = proxyFilters();
+  if (!urls.length) return;
+  browser.proxy.onRequest.addListener(handleProxyRequest, { urls });
+  proxyListenerRegistered = true;
+  console.debug("KIT VPN: proxy filters", urls);
+}
 
 browser.proxy.onError.addListener((err) => {
   console.error("KIT VPN proxy error:", err && err.message ? err.message : err);
@@ -219,6 +245,7 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 (async function init() {
   console.log("KIT VPN extension id:", browser.runtime.id);
   await loadState();
+  refreshProxyListener();
   connectNative();
   pollStatus();
   setInterval(pollStatus, POLL_INTERVAL_MS);
