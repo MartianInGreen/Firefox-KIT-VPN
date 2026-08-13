@@ -1,0 +1,40 @@
+{
+  "manifest_version": 2,
+  "name": "KIT VPN (per-site tunnel)",
+  "version": "0.1.0",
+  "description": "Routes configured *.kit.edu domains through an isolated KIT OpenVPN tunnel. All other Firefox traffic stays on your normal connection.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "kit-vpn@kit-vpn.local",
+      "strict_min_version": "91.0"
+    }
+  },
+  "permissions": [
+    "proxy",
+    "storage",
+    "nativeMessaging",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "domainmatch.js",
+      "background.js"
+    ]
+  },
+  "browser_action": {
+    "default_title": "KIT VPN",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "96": "icons/icon-96.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png"
+  }
+}

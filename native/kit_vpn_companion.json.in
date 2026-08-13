@@ -1,0 +1,9 @@
+{
+  "name": "kit_vpn_companion",
+  "description": "Local companion for the KIT-only OpenVPN Firefox extension (isolated tunnel + localhost SOCKS5)",
+  "path": "__INSTALL_PATH__",
+  "type": "stdio",
+  "allowed_extensions": [
+    "kit-vpn@kit-vpn.local"
+  ]
+}

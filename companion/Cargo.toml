@@ -1,0 +1,16 @@
+[package]
+name = "kit-vpn-companion"
+version = "0.1.0"
+edition = "2021"
+description = "Local companion for the KIT-only Firefox proxy extension: runs an isolated OpenVPN tunnel + localhost SOCKS5"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+nix = { version = "0.29", features = ["sched", "signal", "fs"] }
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

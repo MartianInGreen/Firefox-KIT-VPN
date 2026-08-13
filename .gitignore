@@ -1,0 +1,14 @@
+# Rust
+/companion/target/
+
+# Node / web-ext
+node_modules/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Misc
+*.log

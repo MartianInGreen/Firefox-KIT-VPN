@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title">
+        <h1>KIT VPN</h1>
+        <span id="status" class="status unknown">unknown</span>
+      </div>
+      <label class="switch" title="Route KIT domains through the KIT tunnel">
+        <input type="checkbox" id="toggle">
+        <span class="slider"></span>
+      </label>
+    </header>
+
+    <section class="domains">
+      <h2>Domains through KIT tunnel</h2>
+      <ul id="domain-list"></ul>
+      <form id="add-form">
+        <input type="text" id="new-domain" placeholder="*.kit.edu" spellcheck="false" autocomplete="off">
+        <button type="submit" id="add-btn">Add</button>
+      </form>
+    </section>
+
+    <p class="note">Everything else stays on your normal connection.<br>
+      Requests to KIT domains fail if the tunnel is down (no fallback).</p>
+  </div>
+  <script src="../domainmatch.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
